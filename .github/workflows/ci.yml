@@ -1,0 +1,83 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  structure-check:
+    name: Repository Structure Validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Verify required top-level files
+        run: |
+          for file in README.md LICENSE .gitignore CONTRIBUTING.md SECURITY.md CODE_OF_CONDUCT.md; do
+            if [ ! -f "$file" ]; then
+              echo "❌ Missing required file: $file"
+              exit 1
+            else
+              echo "✅ Found: $file"
+            fi
+          done
+
+      - name: Verify required top-level directories
+        run: |
+          for dir in docs infra kubernetes services tests scripts docker config .github; do
+            if [ ! -d "$dir" ]; then
+              echo "❌ Missing required directory: $dir"
+              exit 1
+            else
+              echo "✅ Found: $dir/"
+            fi
+          done
+
+      - name: Verify documentation pack (11 files)
+        run: |
+          count=$(ls docs/[0-9]*.md 2>/dev/null | wc -l)
+          if [ "$count" -lt 11 ]; then
+            echo "❌ Expected 11 numbered docs, found $count"
+            exit 1
+          fi
+          echo "✅ Documentation pack has $count files"
+
+  markdown-lint:
+    name: Markdown Syntax Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install markdownlint-cli
+        run: npm install -g markdownlint-cli
+
+      - name: Lint markdown files (soft-fail)
+        run: |
+          markdownlint 'docs/**/*.md' 'README.md' --disable MD013 MD033 MD041 || true
+          echo "✅ Markdown lint completed"
+
+  hello-nexus:
+    name: Hello NexusCloud
+    runs-on: ubuntu-latest
+    needs: [structure-check, markdown-lint]
+    steps:
+      - name: Print greeting
+        run: |
+          echo "═══════════════════════════════════════════════════════"
+          echo "🚀 NexusCloud Portfolio — CI pipeline is alive"
+          echo "═══════════════════════════════════════════════════════"
+          echo "Repository is ready for the next milestone:"
+          echo "  → Objective 2: Local lab arranca"
+          echo "═══════════════════════════════════════════════════════"

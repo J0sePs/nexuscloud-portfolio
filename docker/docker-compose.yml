@@ -1,0 +1,277 @@
+name: nexuscloud-lab
+
+networks:
+  nexus:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
+
+volumes:
+  localstack_data:
+  pg_primary_data:
+  pg_replica_data:
+  minio_data:
+  grafana_data:
+  loki_data:
+  tempo_data:
+  prometheus_data:
+  ollama_data:
+  keycloak_data:
+
+services:
+  # ═════════════════════════════════════════════════════════
+  # AWS SIMULATION
+  # ═════════════════════════════════════════════════════════
+  localstack:
+    image: localstack/localstack:3.8.1
+    container_name: nexus-localstack
+    ports:
+      - "4566:4566"
+    environment:
+      SERVICES: "s3,sqs,sns,dynamodb,secretsmanager,iam,kms,cloudwatch,events,stepfunctions,lambda,apigateway,logs,sts"
+      DEBUG: 0
+      DOCKER_HOST: unix:///var/run/docker.sock
+      LAMBDA_EXECUTOR: docker-reuse
+      LS_LOG: warn
+    volumes:
+      - localstack_data:/var/lib/localstack
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks: [nexus]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:4566/_localstack/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  # ═════════════════════════════════════════════════════════
+  # DATA LAYER
+  # ═════════════════════════════════════════════════════════
+  postgres-primary:
+    image: postgres:16.4-alpine
+    container_name: nexus-pg-primary
+    environment:
+      POSTGRES_USER: nexus
+      POSTGRES_PASSWORD: nexus_local_pwd
+      POSTGRES_DB: payments
+      POSTGRES_INITDB_ARGS: "--data-checksums"
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_primary_data:/var/lib/postgresql/data
+    networks: [nexus]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nexus -d payments"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  postgres-replica:
+    image: postgres:16.4-alpine
+    container_name: nexus-pg-replica
+    environment:
+      POSTGRES_USER: nexus
+      POSTGRES_PASSWORD: nexus_local_pwd
+      POSTGRES_DB: payments
+    ports:
+      - "5433:5432"
+    volumes:
+      - pg_replica_data:/var/lib/postgresql/data
+    networks: [nexus]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nexus"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7.4-alpine
+    container_name: nexus-redis
+    command: ["redis-server", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+    ports:
+      - "6379:6379"
+    networks: [nexus]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  minio:
+    image: minio/minio:RELEASE.2025-02-07T23-21-09Z
+    container_name: nexus-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin_change_me
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    networks: [nexus]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ═════════════════════════════════════════════════════════
+  # AUTH
+  # ═════════════════════════════════════════════════════════
+  # Note: Keycloak management interface (health, metrics) runs on
+  # container port 9000. We map it to host port 9990 to avoid collision
+  # with MinIO which owns host port 9000.
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    container_name: nexus-keycloak
+    command: ["start-dev"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin_change_me
+      KC_HEALTH_ENABLED: "true"
+    ports:
+      - "8080:8080"
+      - "9990:9000"
+    volumes:
+      - keycloak_data:/opt/keycloak/data
+    networks: [nexus]
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/9000; echo -e 'GET /health/ready HTTP/1.1\\r\\nhost: localhost\\r\\n\\r\\n' >&3; grep -m1 '200 OK' <&3 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+
+  # ═════════════════════════════════════════════════════════
+  # OBSERVABILITY STACK
+  # ═════════════════════════════════════════════════════════
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.111.0
+    container_name: nexus-otel
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otel-collector-config.yaml:ro
+    ports:
+      - "4317:4317"
+      - "4318:4318"
+      - "8888:8888"
+      - "8889:8889"
+    networks: [nexus]
+    depends_on:
+      - tempo
+      - loki
+      - prometheus
+
+  prometheus:
+    image: prom/prometheus:v2.55.0
+    container_name: nexus-prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=7d'
+      - '--web.enable-lifecycle'
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    networks: [nexus]
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9090/-/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  loki:
+    image: grafana/loki:3.2.0
+    container_name: nexus-loki
+    command: -config.file=/etc/loki/local-config.yaml
+    volumes:
+      - ./loki-config.yaml:/etc/loki/local-config.yaml:ro
+      - loki_data:/loki
+    ports:
+      - "3100:3100"
+    networks: [nexus]
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3100/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  tempo:
+    image: grafana/tempo:2.7.1
+    container_name: nexus-tempo
+    command: ["-config.file=/etc/tempo.yaml"]
+    volumes:
+      - ./tempo.yaml:/etc/tempo.yaml:ro
+      - tempo_data:/var/tempo
+    ports:
+      - "3200:3200"
+      - "9095:9095"
+    networks: [nexus]
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3200/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  grafana:
+    image: grafana/grafana-oss:11.3.0
+    container_name: nexus-grafana
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin_change_me
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_FEATURE_TOGGLES_ENABLE: traceqlEditor
+      GF_INSTALL_PLUGINS: ""
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "3000:3000"
+    networks: [nexus]
+    depends_on:
+      - prometheus
+      - loki
+      - tempo
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider -q http://localhost:3000/api/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ═════════════════════════════════════════════════════════
+  # CHAOS ENGINEERING
+  # ═════════════════════════════════════════════════════════
+  toxiproxy:
+    image: ghcr.io/shopify/toxiproxy:2.11.0
+    container_name: nexus-toxiproxy
+    ports:
+      - "8474:8474"
+    networks: [nexus]
+
+  # ═════════════════════════════════════════════════════════
+  # AI-OPS (Ollama LLM local) — enable with `docker compose --profile ai-ops up`
+  # ═════════════════════════════════════════════════════════
+  ollama:
+    image: ollama/ollama:0.4.7
+    container_name: nexus-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    networks: [nexus]
+    profiles: ["ai-ops"]
+
+  # ═════════════════════════════════════════════════════════
+  # EMAIL TESTING
+  # ═════════════════════════════════════════════════════════
+  mailhog:
+    image: mailhog/mailhog:v1.0.1
+    container_name: nexus-mailhog
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+    networks: [nexus]

@@ -1,0 +1,30 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "type": "text",
+      "title": "Welcome to NexusCloud",
+      "gridPos": {"x": 0, "y": 0, "w": 24, "h": 8},
+      "options": {
+        "mode": "markdown",
+        "content": "# 🚀 NexusCloud Observability\n\nThis dashboard is provisioned from git (Infrastructure-as-Code).\n\n**Datasources ready:**\n- Prometheus (metrics)\n- Loki (logs)\n- Tempo (traces)\n\n**Next milestones:**\n- Sprint 03: payment-service emits metrics\n- Sprint 05: RED/USE dashboards\n- Sprint 09: SLO burn-rate alerts"
+      }
+    }
+  ],
+  "schemaVersion": 38,
+  "tags": ["nexuscloud", "welcome"],
+  "templating": {"list": []},
+  "time": {"from": "now-6h", "to": "now"},
+  "title": "Welcome — NexusCloud",
+  "uid": "welcome-nexuscloud",
+  "version": 1,
+  "weekStart": ""
+}

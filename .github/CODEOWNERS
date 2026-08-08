@@ -1,0 +1,39 @@
+# CODEOWNERS — NexusCloud Portfolio
+# Each line assigns owners to matching paths. Order matters — last match wins.
+
+# Default fallback owner
+*                                   @a-lead
+
+# Architecture decisions require A-LEAD approval
+/docs/adr/                          @a-lead
+
+# Infrastructure — dual ownership
+/infra/                             @a-lead @d-ops
+/infra/modules/security-baseline/   @c-sec @a-lead
+/infra/modules/networking/          @a-lead
+
+# Kubernetes / GitOps
+/kubernetes/                        @d-ops @a-lead
+/kubernetes/argocd/                 @a-lead
+
+# Application code
+/services/                          @b-dev
+/services/payment-service/          @b-dev @c-sec
+/services/auth-service/             @b-dev @c-sec
+/services/ai-ops-agent/             @b-dev @d-ops
+
+# CI/CD & Security tooling
+/.github/workflows/                 @a-lead @c-sec
+/.github/workflows/security-*.yml   @c-sec
+/scripts/                           @a-lead
+
+# Documentation
+/docs/runbooks/                     @d-ops
+/docs/post-mortems/                 @d-ops
+/docs/security-model.md             @c-sec
+/docs/slo-sli.md                    @d-ops
+
+# Tests
+/tests/chaos/                       @d-ops
+/tests/security/                    @c-sec
+/tests/                             @b-dev @d-ops

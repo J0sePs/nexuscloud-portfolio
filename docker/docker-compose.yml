@@ -29,7 +29,7 @@ services:
     ports:
       - "4566:4566"
     environment:
-      SERVICES: "s3,sqs,sns,dynamodb,secretsmanager,iam,kms,cloudwatch,events,stepfunctions,lambda,apigateway,logs,sts"
+      SERVICES: "ec2,s3,sqs,sns,dynamodb,secretsmanager,iam,kms,cloudwatch,events,stepfunctions,lambda,apigateway,logs,sts"
       DEBUG: 0
       DOCKER_HOST: unix:///var/run/docker.sock
       LAMBDA_EXECUTOR: docker-reuse

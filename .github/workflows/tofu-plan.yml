@@ -1,0 +1,55 @@
+name: OpenTofu Plan
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'infra/**'
+      - '.github/workflows/tofu-plan.yml'
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  tofu-checks:
+    name: OpenTofu Format & Validate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup OpenTofu
+        uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_version: 1.8.5
+
+      - name: Check formatting
+        run: tofu fmt -check -recursive infra/
+
+      - name: Validate module — networking
+        working-directory: infra/modules/networking
+        run: |
+          tofu init -backend=false
+          tofu validate
+
+      - name: Validate environment — dev
+        working-directory: infra/environments/dev
+        run: |
+          tofu init -backend=false
+          tofu validate
+
+  tofu-security:
+    name: IaC Security Scan (Checkov)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Checkov
+        uses: bridgecrewio/checkov-action@master
+        with:
+          directory: infra/
+          framework: terraform
+          soft_fail: true
+          quiet: true

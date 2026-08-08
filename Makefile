@@ -224,3 +224,31 @@ reset-service: ## Reset a single stateful service (usage: make reset-service SER
 .PHONY: destroy
 destroy: lab-clean ## Destroy EVERYTHING (including data)
 	@echo -e "$(RED)💥 Everything destroyed$(RESET)"
+# ═══════════════════════════════════════════════════════════════
+# TERRAFORM / OPENTOFU
+# ═══════════════════════════════════════════════════════════════
+.PHONY: tf-check
+tf-check: ## Format check + validate all Terraform code
+	@echo -e "$(BLUE)🔍 Checking OpenTofu formatting...$(RESET)"
+	tofu fmt -check -recursive infra/
+	@echo -e "$(BLUE)🔍 Validating modules...$(RESET)"
+	cd infra/modules/networking && tofu init -backend=false && tofu validate
+	@echo -e "$(BLUE)🔍 Validating environments...$(RESET)"
+	cd infra/environments/dev && tofu init -backend=false && tofu validate
+	@echo -e "$(GREEN)✅ All Terraform checks passed$(RESET)"
+
+.PHONY: tf-bootstrap-dev
+tf-bootstrap-dev: ## Bootstrap S3+DynamoDB backend in LocalStack for dev
+	./scripts/infra/bootstrap-backend.sh dev
+
+.PHONY: tf-plan-dev
+tf-plan-dev: ## Run tflocal plan in dev environment
+	cd infra/environments/dev && tflocal init -upgrade && tflocal plan
+
+.PHONY: tf-apply-dev
+tf-apply-dev: ## Run tflocal apply in dev environment
+	cd infra/environments/dev && tflocal apply -auto-approve
+
+.PHONY: tf-destroy-dev
+tf-destroy-dev: ## Destroy dev infrastructure (data safe — only in LocalStack)
+	cd infra/environments/dev && tflocal destroy -auto-approve
